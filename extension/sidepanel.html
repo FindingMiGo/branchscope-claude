@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>BranchScope for Claude</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<style>
+body { display: flex; flex-direction: column; }
+
+/* ── header ── */
+#header {
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  background: var(--bg-panel); backdrop-filter: blur(20px);
+}
+.brand-icon {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(86,212,200,0.2);
+}
+.brand-text h1 { font-size: 15px; font-weight: 700; color: var(--text-bright); letter-spacing: -0.3px; }
+.brand-text sub { font-size: 9px; color: var(--text-dim); letter-spacing: 1.2px; text-transform: uppercase; display: block; }
+#btn-reload {
+  margin-left: auto; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--text-dim); font-size: 11px;
+  padding: 5px 10px; cursor: pointer; font-family: var(--font-display);
+  transition: all 0.15s;
+}
+#btn-reload:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+/* ── loading ── */
+#loading {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+}
+.spinner { width: 32px; height: 32px; }
+#loading-text { font-size: 13px; color: var(--text-dim); }
+#error-text { font-size: 13px; color: var(--rose); display: none; text-align: center; padding: 0 20px; line-height: 1.7; }
+
+/* ── main content ── */
+#main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+
+.stats-bar {
+  display: flex; gap: 4px; padding: 10px 16px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.stat-pill {
+  font-family: var(--font-mono); font-size: 11px; padding: 3px 8px;
+  border-radius: 4px; background: var(--bg-card); border: 1px solid var(--border);
+}
+.stat-pill .v { font-weight: 600; }
+.stat-pill .v.segs { color: var(--cyan); }
+.stat-pill .v.total { color: var(--accent); }
+.stat-pill .v.keep { color: var(--green); }
+.stat-pill .v.del { color: var(--rose); }
+
+/* ── search ── */
+.search-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.search-bar input[type=text] {
+  flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 8px; color: var(--text-bright);
+  font-family: var(--font-display); font-size: 11px; outline: none;
+  transition: border-color 0.15s;
+}
+.search-bar input[type=text]:focus { border-color: var(--cyan); }
+.search-bar input[type=text]::placeholder { color: var(--text-dim); }
+.search-count { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.search-nav-inline { display: flex; align-items: center; gap: 3px; }
+.search-nav-inline button {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 3px; color: var(--text-dim); font-size: 9px;
+  padding: 2px 5px; cursor: pointer; transition: all 0.15s;
+}
+.search-nav-inline button:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.search-pos { font-family: var(--font-mono); font-size: 10px; color: var(--cyan); }
+
+/* ── filter ── */
+.filter-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.filter-bar label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; }
+.filter-bar input[type=range] {
+  flex: 1; appearance: none; height: 3px; border-radius: 2px;
+  background: rgba(255,255,255,0.08); outline: none;
+}
+.filter-bar input[type=range]::-webkit-slider-thumb {
+  appearance: none; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; box-shadow: 0 0 6px var(--accent-glow);
+}
+.filter-val { font-family: var(--font-mono); font-size: 12px; color: var(--accent); min-width: 22px; text-align: right; }
+
+/* ── tree area ── */
+#tree-area { flex: 1; position: relative; overflow: hidden; }
+
+/* ── bottom reader panel ── */
+#reader {
+  height: 0; background: var(--bg-panel); backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+  transition: height 0.3s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+}
+#reader.open { height: 45%; }
+#reader-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+#reader-header h3 {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#btn-save-log {
+  background: rgba(74,222,128,0.08); color: var(--green);
+  border: 1px solid rgba(74,222,128,0.2); border-radius: 4px;
+  font-family: var(--font-display); font-size: 10px; cursor: pointer;
+  padding: 4px 10px; white-space: nowrap; transition: all 0.15s;
+}
+#btn-save-log:hover { background: rgba(74,222,128,0.15); }
+#reader-close {
+  background: none; border: none; color: var(--text-dim); font-size: 18px;
+  cursor: pointer; padding: 2px 6px; line-height: 1; transition: color 0.15s;
+}
+#reader-close:hover { color: var(--text-bright); }
+#reader-body {
+  flex: 1; overflow-y: auto; padding: 14px 16px; font-size: 12px; line-height: 1.75;
+}
+#reader-body::-webkit-scrollbar { width: 3px; }
+#reader-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="brand-icon">&#x2442;</div>
+  <div class="brand-text"><h1>BranchScope</h1><sub>for Claude</sub></div>
+  <button id="btn-reload">&#x21BB; Reload</button>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loading-text">Loading conversation...</div>
+  <div id="error-text"></div>
+</div>
+
+<div id="main">
+  <div class="stats-bar">
+    <div class="stat-pill"><span class="v segs" id="s-segs">-</span> seg</div>
+    <div class="stat-pill"><span class="v total" id="s-total">-</span> routes</div>
+    <div class="stat-pill"><span class="v keep" id="s-keep">-</span> keep</div>
+    <div class="stat-pill"><span class="v del" id="s-del">0</span> pruned</div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="search-input" placeholder="Search...">
+    <span class="search-count" id="search-count"></span>
+    <div class="search-nav-inline" id="search-nav" style="display:none">
+      <button id="search-prev">&#x25B2;</button>
+      <span class="search-pos" id="search-pos">0/0</span>
+      <button id="search-next">&#x25BC;</button>
+      <button id="search-clear">&#x2715;</button>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <label>Filter</label>
+    <input type="range" id="threshold-slider" min="0" max="50" value="0">
+    <span class="filter-val" id="threshold-val">0</span>
+  </div>
+  <div id="tree-area">
+    <svg id="main-svg"></svg>
+  </div>
+  <div id="reader">
+    <div id="reader-header">
+      <h3 id="reader-title"></h3>
+      <button id="btn-jump-branch">&#x2197; Continue</button>
+      <button id="btn-save-log">&#x2913; Save</button>
+      <button id="reader-close">&times;</button>
+    </div>
+    <div id="reader-body"></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>Prune branch</h3>
+    <p id="modal-body"></p>
+    <div class="btns">
+      <button id="btn-modal-cancel">Cancel</button>
+      <button id="btn-modal-confirm">Prune</button>
+    </div>
+  </div>
+</div>
+
+<script src="d3.v7.min.js"></script>
+<script src="common.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>
