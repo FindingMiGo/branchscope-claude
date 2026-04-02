@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifest.json
+        run: python3 -c "import json; json.load(open('extension/manifest.json'))"
+
+      - name: Check JS syntax
+        run: |
+          for f in extension/*.js; do
+            echo "Checking $f..."
+            node --check "$f"
+          done
+
+      - name: Build extension zip
+        run: |
+          cd extension
+          zip -r ../branchscope-claude.zip . -x "*.DS_Store"
+          ls -lh ../branchscope-claude.zip
+
+      - name: Verify manifest fields
+        run: |
+          python3 -c "
+          import json, sys
+          m = json.load(open('extension/manifest.json'))
+          assert m.get('manifest_version') == 3, 'manifest_version must be 3'
+          assert m.get('name'), 'name is required'
+          assert m.get('version'), 'version is required'
+          print(f\"  {m['name']} v{m['version']} - manifest OK\")
+          "
