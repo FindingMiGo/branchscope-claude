@@ -67,6 +67,18 @@ body { display: flex; }
 .filter-row input[type=range] { flex: 1; appearance: none; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.08); outline: none; }
 .filter-row input[type=range]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 0 8px var(--accent-glow); }
 .filter-val { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); min-width: 28px; text-align: right; }
+.filter-row input[type=number].filter-input {
+  width: 90px; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 8px; color: var(--text-bright);
+  font-family: var(--font-mono); font-size: 12px; outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+}
+.filter-row input[type=number].filter-input:focus { border-color: var(--accent); }
+.filter-row input[type=number].filter-input::-webkit-outer-spin-button,
+.filter-row input[type=number].filter-input::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
 .filter-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
 .filter-meta .g { color: var(--green); font-weight: 600; }
 .filter-meta .r { color: var(--rose); font-weight: 600; }
@@ -146,9 +158,10 @@ body { display: flex; }
     <button class="btn-nav" id="search-clear">&#x2715;</button>
   </div>
   <div class="divider"></div>
-  <div class="section-label">Branch Filter</div>
+  <div class="section-label">Branch Char Filter</div>
   <div class="filter-row">
-    <input type="range" id="threshold-slider" min="0" max="50" value="0">
+    <input type="range" id="threshold-slider" min="0" max="100" step="0.1" value="0">
+    <input type="number" id="threshold-input" class="filter-input" min="0" step="100" value="0">
     <span class="filter-val" id="threshold-val">0</span>
   </div>
   <div class="filter-meta"><b class="g" id="visible-count">-</b> visible / <b class="r" id="hidden-count">0</b> hidden</div>
@@ -165,6 +178,7 @@ body { display: flex; }
   <button class="btn" id="btn-copy-del"><span class="btn-icon">&#x2398;</span> Copy pruned list</button>
   <button class="btn" id="btn-copy-kept"><span class="btn-icon">&#x2398;</span> Copy kept list</button>
   <button class="btn danger" id="btn-reset-all"><span class="btn-icon">&#x21BA;</span> Reset all</button>
+  <button class="btn" id="btn-save-json"><span class="btn-icon">&#x2B73;</span> Save JSON</button>
   <div class="divider"></div>
   <div class="legend">
     <div class="legend-item"><span class="legend-dot" style="background:#56d4c8"></span>Linear</div>

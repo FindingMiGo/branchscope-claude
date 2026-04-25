@@ -3,6 +3,8 @@
 var TOTAL = 0;
 var SEG_TEXTS = {};
 var SEG_UUIDS = {};
+var RAW_CONV_DATA = null;
+var MAX_SUBTREE_CHARS = 0;
 var root = null;
 var svg, g, gL, gZ, gN, zoom, treeLayout;
 var deletedRanges = [];
@@ -16,7 +18,19 @@ var searchTimer = null;
 
 // ── Tree construction ──────────────────────────────
 
+function saveJson() {
+  if (!RAW_CONV_DATA) { alert('No data loaded'); return; }
+  var name = (RAW_CONV_DATA.name || 'conversation').replace(/[/\\:*?"<>|]/g, '_');
+  var blob = new Blob([JSON.stringify(RAW_CONV_DATA, null, 2)], { type: 'application/json; charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function buildTree(convData, onReady) {
+  RAW_CONV_DATA = convData;
   var msgsList = convData.chat_messages;
   var msg = {};
   msgsList.forEach(function(m) { msg[m.uuid] = m; });
@@ -151,9 +165,11 @@ function buildTree(convData, onReady) {
 
   // Build segment text data
   SEG_TEXTS = {};
+  var segCharCount = {};
   var maxMsgCount = 0;
   Object.keys(segUuids).forEach(function(sid) {
     var entries = [];
+    var chars = 0;
     segUuids[sid].forEach(function(uuid) {
       var m = msg[uuid] || {};
       var sender = m.sender === 'human' ? 'human' : 'assistant';
@@ -162,11 +178,41 @@ function buildTree(convData, onReady) {
       for (var i = 0; i < content.length; i++) {
         if (content[i].type === 'text') { text = (content[i].text || '').trim(); break; }
       }
-      if (text) entries.push({ role: sender, text: text });
+      if (text) { entries.push({ role: sender, text: text }); chars += text.length; }
     });
     SEG_TEXTS[sid] = entries;
+    segCharCount[sid] = chars;
     if (segUuids[sid].length > maxMsgCount) maxMsgCount = segUuids[sid].length;
   });
+
+  // 枝ごとの累積文字数（サブツリー合計）
+  var segSubtreeChars = {};
+  function computeSubtreeChars(sid) {
+    var cs = segChildren[sid] || [];
+    var total = segCharCount[sid] || 0;
+    cs.forEach(function(c) { total += computeSubtreeChars(c); });
+    segSubtreeChars[sid] = total;
+    return total;
+  }
+  computeSubtreeChars(rootSid);
+  MAX_SUBTREE_CHARS = segSubtreeChars[rootSid] || 1;
+
+  // 枝ごとの色割り当て（DFS葉順に均等色相）
+  var branchColors = {};
+  var leafColorIdx = 0;
+  function assignBranchColors(sid) {
+    var cs = segChildren[sid] || [];
+    if (!cs.length) {
+      var hue = Math.round((leafColorIdx / Math.max(TOTAL, 1)) * 330);
+      branchColors[sid] = 'hsl(' + hue + ',78%,68%)';
+      leafColorIdx++;
+      return;
+    }
+    cs.forEach(assignBranchColors);
+    // 子が1本だけなら同色を継承、分岐点はnull
+    branchColors[sid] = cs.length === 1 ? branchColors[cs[0]] : null;
+  }
+  assignBranchColors(rootSid);
 
   function toD3(sid) {
     var cs = segChildren[sid] || [];
@@ -175,7 +221,10 @@ function buildTree(convData, onReady) {
       id: sid, label: segLabel(sid),
       route_min: rmin, route_max: rmax,
       leaf_count: rmax - rmin + 1, msg_count: segUuids[sid].length,
-      n_branch: cs.length, is_main: !!mainPathSids[sid]
+      n_branch: cs.length, is_main: !!mainPathSids[sid],
+      seg_char_count: segCharCount[sid] || 0,
+      subtree_chars: segSubtreeChars[sid] || 0,
+      branch_color: branchColors[sid] || null
     };
     if (cs.length) node.children = cs.map(toD3);
     return node;
@@ -189,7 +238,12 @@ function buildTree(convData, onReady) {
   document.getElementById('s-total').textContent = TOTAL;
   document.getElementById('s-keep').textContent = TOTAL;
   document.getElementById('s-del').textContent = '0';
-  document.getElementById('threshold-slider').max = maxMsgCount;
+  document.getElementById('threshold-slider').max = 100;
+  var thresholdInput = document.getElementById('threshold-input');
+  if (thresholdInput) {
+    thresholdInput.max = MAX_SUBTREE_CHARS;
+    thresholdInput.value = 0;
+  }
 
   if (onReady) onReady(convData);
   initD3(treeData);
@@ -207,7 +261,7 @@ function initD3(treeData) {
     .on('zoom', function(e) { g.attr('transform', e.transform); });
   svg.call(zoom);
 
-  treeLayout = d3.tree().nodeSize([22, 230]);
+  treeLayout = d3.tree().nodeSize([36, 230]).separation(function(a, b) { return a.parent === b.parent ? 1 : 1.4; });
   root = d3.hierarchy(treeData);
   root.x0 = 0; root.y0 = 0;
   root.each(function(d) { d._allChildren = d.children || d._children || null; });
@@ -226,12 +280,26 @@ function nodeColor(d) {
   return '#e85d6f';
 }
 
-function linkStroke(d) { return d.target.data.is_main ? '#e8b931' : '#2a2a40'; }
-function linkW(d) { return 1.5; }
+function linkStroke(d) {
+  return d.target.data.branch_color || (d.target.data.is_main ? '#e8b931' : '#7a7aa0');
+}
+function linkOpacity(d) { return d.target.data.branch_color ? 0.95 : 0.75; }
+function linkW(d) { return d.target.data.is_main ? 2.5 : 2; }
 
 function diagonal(d) {
-  var sx = d.source.y, sy = d.source.x, tx = d.target.y, ty = d.target.x, mx = (sx + tx) / 2;
-  return 'M' + sx + ',' + sy + 'C' + mx + ',' + sy + ' ' + mx + ',' + ty + ' ' + tx + ',' + ty;
+  var sx = d.source.y, sy = d.source.x, tx = d.target.y, ty = d.target.x;
+  // 親ノードのすぐ右で垂直に分岐し、その後水平に伸びる直角ルーティング。
+  // ベジェ曲線は横軸の大きなスパンを面として掃引し他の枝に干渉するため使わない。
+  var vx = sx + Math.max(12, (tx - sx) * 0.08);
+  var R = Math.min(6, Math.abs(ty - sy) / 2, (tx - vx) / 2);
+  if (R < 1 || sy === ty) return 'M' + sx + ',' + sy + 'H' + tx;
+  var sign = ty > sy ? 1 : -1;
+  return 'M' + sx + ',' + sy +
+    'H' + (vx - R) +
+    'Q' + vx + ',' + sy + ' ' + vx + ',' + (sy + sign * R) +
+    'V' + (ty - sign * R) +
+    'Q' + vx + ',' + ty + ' ' + (vx + R) + ',' + ty +
+    'H' + tx;
 }
 
 function routeLabel(rmin, rmax) {
@@ -247,7 +315,38 @@ function update(source) {
   var DUR = 250;
   treeLayout(root);
   var nodes = root.descendants(), links = root.links();
-  nodes.forEach(function(d) { d.y = d.depth * 240; });
+
+  // x座標を leaf range (route_min ~ route_max) ベースで決定する。
+  // 兄弟枝の leaf range は構築時点で完全に分離されているため、
+  // どの深さでも兄弟サブツリーの x 範囲は絶対に重ならない。
+  // d3.tree のデフォルト x 配置は「すべての深さ y が一様」という仮定のもとで
+  // contour ベースの非重なりを保証するが、ここでは y を累積文字数で再配置するため
+  // その仮定が崩れ、早期に分岐した枝が広がるうちに隣の枝に侵入する問題が起きる。
+  var ROW_HEIGHT = 36;
+  var midRoute = (TOTAL + 1) / 2;
+  nodes.forEach(function(d) {
+    var rMin = d.data.route_min;
+    var rMax = d.data.route_max;
+    if (rMin == null || rMax == null) return;
+    d.x = ((rMin + rMax) / 2 - midRoute) * ROW_HEIGHT;
+  });
+
+  // 累積文字数を親→子の順で計算
+  root.eachBefore(function(d) {
+    d._cumChars = (d.data.seg_char_count || 0) + (d.parent ? (d.parent._cumChars || 0) : 0);
+  });
+  var maxCumChars = 0;
+  nodes.forEach(function(d) { if (d._cumChars > maxCumChars) maxCumChars = d._cumChars; });
+
+  var maxDepth = 0;
+  nodes.forEach(function(d) { if (d.depth > maxDepth) maxDepth = d.depth; });
+  var refPx = Math.max(maxDepth, 1) * 240;
+
+  if (maxCumChars > 0) {
+    nodes.forEach(function(d) { d.y = (d._cumChars / maxCumChars) * refPx; });
+  } else {
+    nodes.forEach(function(d) { d.y = d.depth * 240; });
+  }
 
   var sx0 = source.x0 !== undefined ? source.x0 : 0;
   var sy0 = source.y0 !== undefined ? source.y0 : 0;
@@ -257,9 +356,11 @@ function update(source) {
   var lSel = gL.selectAll('.link').data(links, function(d) { return d.target.data.id; });
   var lEnter = lSel.enter().append('path')
     .attr('class', function(d) { return 'link' + (d.target.data.is_main ? ' is-main' : ''); })
-    .attr('stroke', linkStroke).attr('stroke-width', linkW).attr('d', zero);
+    .attr('stroke', linkStroke).attr('stroke-width', linkW)
+    .attr('stroke-opacity', linkOpacity).attr('d', zero);
   lSel.merge(lEnter).transition().duration(DUR)
-    .attr('stroke', linkStroke).attr('stroke-width', linkW).attr('d', diagonal);
+    .attr('stroke', linkStroke).attr('stroke-width', linkW)
+    .attr('stroke-opacity', linkOpacity).attr('d', diagonal);
   lSel.exit().transition().duration(DUR)
     .attr('d', 'M' + (source.y || 0) + ',' + (source.x || 0) + 'C' + (source.y || 0) + ',' + (source.x || 0) + ' ' + (source.y || 0) + ',' + (source.x || 0) + ' ' + (source.y || 0) + ',' + (source.x || 0))
     .remove();
@@ -294,7 +395,7 @@ function update(source) {
 
   nEnter.append('circle')
     .attr('r', 0)
-    .attr('fill', nodeColor)
+    .attr('fill', function(d) { return d.data.branch_color || nodeColor(d); })
     .attr('stroke', function(d) { return d.data.is_main ? '#e8b931' : 'rgba(255,255,255,0.15)'; })
     .on('click', function(event, d) {
       event.stopPropagation();
@@ -307,14 +408,22 @@ function update(source) {
     .attr('dy', '0.32em').attr('text-anchor', 'middle')
     .on('click', function(event, d) { event.stopPropagation(); openReader(d); });
 
+  nEnter.append('text')
+    .attr('class', 'branch-chars')
+    .attr('text-anchor', 'middle')
+    .style('font-size', '9px')
+    .style('fill', '#8888aa')
+    .on('click', function(event, d) { event.stopPropagation(); openReader(d); });
+
   var nMerge = nSel.merge(nEnter);
   nMerge.transition().duration(DUR)
     .attr('transform', function(d) { return 'translate(' + d.y + ',' + d.x + ')'; });
   nMerge.select('circle')
-    .attr('r', function(d) { return 4; })
-    .attr('fill', nodeColor);
+    .attr('r', 4)
+    .attr('fill', function(d) { return d.data.branch_color || nodeColor(d); });
   nMerge.select('text')
-    .attr('y', function(d) { return -(4 + 3); })
+    .attr('y', -(4 + 3))
+    .style('fill', function(d) { return d.data.branch_color || null; })
     .text(function(d) {
       var rmin = d.data.route_min, rmax = d.data.route_max;
       var rstr = rmin === rmax
@@ -322,6 +431,17 @@ function update(source) {
         : '[' + String(rmin).padStart(3, '0') + '-' + String(rmax).padStart(3, '0') + ']';
       var lbl = d.data.label.length > 18 ? d.data.label.slice(0, 18) + '...' : d.data.label;
       return rstr + ' ' + lbl;
+    });
+
+  nMerge.select('text.branch-chars')
+    .attr('y', 4 + 3 + 11)
+    .style('fill', function(d) { return d.data.branch_color || '#8888aa'; })
+    .text(function(d) {
+      if (d.data.n_branch !== 0) return '';
+      var total = d.ancestors().reduce(function(sum, n) {
+        return sum + (n.data.seg_char_count || 0);
+      }, 0);
+      return total.toLocaleString() + 'c';
     });
 
   nSel.exit().transition().duration(DUR)
@@ -456,12 +576,6 @@ function resetView() {
 
 // ── Threshold filter ───────────────────────────────
 
-function countMsgsBelow(node) {
-  var n = node.data.msg_count;
-  (node._allChildren || []).forEach(function(c) { n += countMsgsBelow(c); });
-  return n;
-}
-
 function countNodes(node) {
   var n = 1;
   (node.children || []).forEach(function(c) { n += countNodes(c); });
@@ -474,11 +588,19 @@ function countAllNodes(node) {
   return n;
 }
 
-function applyThreshold() {
-  var val = parseInt(document.getElementById('threshold-slider').value, 10);
-  document.getElementById('threshold-val').textContent = val;
+function applyThresholdValue(threshold, syncSlider, syncInput) {
+  threshold = Math.max(0, Math.min(MAX_SUBTREE_CHARS, Math.round(threshold)));
+  var slider = document.getElementById('threshold-slider');
+  var input = document.getElementById('threshold-input');
+  if (syncSlider && slider) {
+    var pct = MAX_SUBTREE_CHARS > 0 ? (threshold / MAX_SUBTREE_CHARS) * 100 : 0;
+    slider.value = pct;
+  }
+  if (syncInput && input) input.value = threshold;
+  document.getElementById('threshold-val').textContent =
+    threshold > 0 ? threshold.toLocaleString() + 'c' : '0';
   if (!root) return;
-  filterTree(root, val);
+  filterTree(root, threshold);
   update(root);
   var total = countAllNodes(root);
   var visible = countNodes(root);
@@ -486,6 +608,18 @@ function applyThreshold() {
   var hidEl = document.getElementById('hidden-count');
   if (visEl) visEl.textContent = visible;
   if (hidEl) hidEl.textContent = total - visible;
+}
+
+function applyThreshold() {
+  var pct = parseFloat(document.getElementById('threshold-slider').value);
+  var threshold = Math.round(pct / 100 * MAX_SUBTREE_CHARS);
+  applyThresholdValue(threshold, false, true);
+}
+
+function applyThresholdFromInput() {
+  var v = parseInt(document.getElementById('threshold-input').value, 10);
+  if (isNaN(v)) v = 0;
+  applyThresholdValue(v, true, false);
 }
 
 function filterTree(node, threshold) {
@@ -498,7 +632,7 @@ function filterTree(node, threshold) {
   } else {
     var show = [], hide = [];
     all.forEach(function(c) {
-      if (countMsgsBelow(c) <= threshold) { hide.push(c); }
+      if ((c.data.subtree_chars || 0) <= threshold) { hide.push(c); }
       else { show.push(c); filterTree(c, threshold); }
     });
     node.children = show.length ? show : null;
@@ -591,10 +725,18 @@ function initCommonListeners() {
     if (e.target === document.getElementById('modal-overlay')) closeModal();
   });
   document.getElementById('threshold-slider').addEventListener('input', applyThreshold);
+  var thrInput = document.getElementById('threshold-input');
+  if (thrInput) {
+    thrInput.addEventListener('input', applyThresholdFromInput);
+    thrInput.addEventListener('change', applyThresholdFromInput);
+  }
   document.getElementById('btn-save-log').addEventListener('click', saveLog);
   document.getElementById('reader-close').addEventListener('click', closeReader);
   document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
   document.getElementById('btn-modal-confirm').addEventListener('click', doDelete);
+  var btnSaveJson = document.getElementById('btn-save-json');
+  if (btnSaveJson) btnSaveJson.addEventListener('click', saveJson);
+
   document.getElementById('search-input').addEventListener('input', function() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(doSearch, 250);

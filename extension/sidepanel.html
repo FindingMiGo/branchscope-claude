@@ -24,13 +24,14 @@ body { display: flex; flex-direction: column; }
 }
 .brand-text h1 { font-size: 15px; font-weight: 700; color: var(--text-bright); letter-spacing: -0.3px; }
 .brand-text sub { font-size: 9px; color: var(--text-dim); letter-spacing: 1.2px; text-transform: uppercase; display: block; }
-#btn-reload {
-  margin-left: auto; background: var(--bg-card); border: 1px solid var(--border);
+#btn-reload, #btn-save-json {
+  background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 5px; color: var(--text-dim); font-size: 11px;
   padding: 5px 10px; cursor: pointer; font-family: var(--font-display);
   transition: all 0.15s;
 }
-#btn-reload:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+#btn-reload { margin-left: auto; }
+#btn-reload:hover, #btn-save-json:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 
 /* ── loading ── */
 #loading {
@@ -96,6 +97,18 @@ body { display: flex; flex-direction: column; }
   background: var(--accent); cursor: pointer; box-shadow: 0 0 6px var(--accent-glow);
 }
 .filter-val { font-family: var(--font-mono); font-size: 12px; color: var(--accent); min-width: 22px; text-align: right; }
+.filter-bar input[type=number].filter-input {
+  width: 80px; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 6px; color: var(--text-bright);
+  font-family: var(--font-mono); font-size: 11px; outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+}
+.filter-bar input[type=number].filter-input:focus { border-color: var(--accent); }
+.filter-bar input[type=number].filter-input::-webkit-outer-spin-button,
+.filter-bar input[type=number].filter-input::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
 
 /* ── tree area ── */
 #tree-area { flex: 1; position: relative; overflow: hidden; }
@@ -141,6 +154,7 @@ body { display: flex; flex-direction: column; }
   <div class="brand-icon">&#x2442;</div>
   <div class="brand-text"><h1>BranchScope</h1><sub>for Claude</sub></div>
   <button id="btn-reload">&#x21BB; Reload</button>
+  <button id="btn-save-json">&#x2B73; JSON</button>
 </div>
 
 <div id="loading">
@@ -167,8 +181,9 @@ body { display: flex; flex-direction: column; }
     </div>
   </div>
   <div class="filter-bar">
-    <label>Filter</label>
-    <input type="range" id="threshold-slider" min="0" max="50" value="0">
+    <label>Chars</label>
+    <input type="range" id="threshold-slider" min="0" max="100" step="0.1" value="0">
+    <input type="number" id="threshold-input" class="filter-input" min="0" step="100" value="0">
     <span class="filter-val" id="threshold-val">0</span>
   </div>
   <div id="tree-area">
