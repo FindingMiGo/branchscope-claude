@@ -889,7 +889,6 @@ function injectedNavigate(targetUuids, scrollText) {
 
   async function run() {
     showToast('🔀 Navigating branch...');
-    console.log('[BranchScope] injectedNavigate v4, uuids:', targetUuids.length);
 
     // 会話データ取得
     var convMatch = location.pathname.match(/\/chat\/([0-9a-f-]+)/);
@@ -935,7 +934,6 @@ function injectedNavigate(targetUuids, scrollText) {
       }
     }
 
-    console.log('[BranchScope] Branch points to navigate:', branchPoints.length);
     if (!branchPoints.length) return { ok: true };
 
     // ブランチ切替ボタンを探す
@@ -961,8 +959,6 @@ function injectedNavigate(targetUuids, scrollText) {
     // 各分岐点で、ブランチ切替ボタンを使って目的のブランチに移動
     for (var bi = 0; bi < branchPoints.length; bi++) {
       var bp = branchPoints[bi];
-      console.log('[BranchScope] Navigating branch', bi + 1, '/', branchPoints.length,
-        'target index:', bp.targetIndex, '/', bp.totalSiblings);
 
       // 現在のブランチ位置を確認するため、対象の親メッセージ付近のボタンを探す
       // 戦略: "以前のバージョン"/"次のバージョン" ボタンをクリックして
@@ -975,7 +971,6 @@ function injectedNavigate(targetUuids, scrollText) {
         // 現在のDOMの状態を確認
         var versionBtns = findVersionButtons();
         if (!versionBtns.length) {
-          console.log('[BranchScope] No version buttons found, skipping');
           break;
         }
 
@@ -990,7 +985,6 @@ function injectedNavigate(targetUuids, scrollText) {
           var msgUuid = extractMsgUuid(userMsgs[mi]);
           if (msgUuid === bp.targetChildUuid) {
             found = true;
-            console.log('[BranchScope] Target branch already visible!');
             break;
           }
           // 兄弟のいずれかが表示されているか
@@ -1004,7 +998,6 @@ function injectedNavigate(targetUuids, scrollText) {
 
         if (currentChildUuid) {
           var currentIdx = (childrenOf[bp.parentUuid] || []).indexOf(currentChildUuid);
-          console.log('[BranchScope] Currently showing sibling index:', currentIdx, 'need:', bp.targetIndex);
 
           // 近いボタンを探す（currentChildUuid の user-message 要素の近く）
           var targetMsgEl = null;
@@ -1031,11 +1024,9 @@ function injectedNavigate(targetUuids, scrollText) {
 
             var clickBtn = bp.targetIndex > currentIdx ? nextBtn : prevBtn;
             if (clickBtn) {
-              console.log('[BranchScope] Clicking:', clickBtn.getAttribute('aria-label'));
               clickBtn.click();
               await sleep(500);
             } else {
-              console.log('[BranchScope] No suitable button found near message');
               break;
             }
           } else {
@@ -1044,7 +1035,6 @@ function injectedNavigate(targetUuids, scrollText) {
             var prevBtns = versionBtns.filter(function(b) { return b.type === 'prev'; });
             var clickBtn = bp.targetIndex > 0 ? (nextBtns[0] && nextBtns[0].el) : (prevBtns[0] && prevBtns[0].el);
             if (clickBtn) {
-              console.log('[BranchScope] Clicking global button:', clickBtn.getAttribute('aria-label'));
               clickBtn.click();
               await sleep(500);
             } else {
@@ -1055,7 +1045,6 @@ function injectedNavigate(targetUuids, scrollText) {
           // UUID確認できない場合、次のバージョンボタンを順にクリック
           var nextBtns = versionBtns.filter(function(b) { return b.type === 'next'; });
           if (nextBtns.length > 0) {
-            console.log('[BranchScope] Clicking next (blind)');
             nextBtns[0].el.click();
             await sleep(500);
           } else {
@@ -1065,9 +1054,7 @@ function injectedNavigate(targetUuids, scrollText) {
       }
 
       if (found) {
-        console.log('[BranchScope] Branch', bi + 1, 'navigation succeeded');
       } else {
-        console.log('[BranchScope] Branch', bi + 1, 'navigation: could not confirm target');
       }
 
       await sleep(300);
@@ -1075,7 +1062,6 @@ function injectedNavigate(targetUuids, scrollText) {
 
     // スクロール: テキストマッチ → scrollIntoView
     // Claude.ai のチャットコンテナを探す
-    console.log('[BranchScope] scrollText:', JSON.stringify(scrollText));
     if (scrollText) {
       function stripMd(s) {
         return s.replace(/```[\s\S]*?```/g, '')
@@ -1085,26 +1071,17 @@ function injectedNavigate(targetUuids, scrollText) {
           .replace(/\n/g, '').replace(/\s+/g, '');
       }
       var snippet = stripMd(scrollText).slice(0, 30);
-      console.log('[BranchScope] Looking for snippet:', JSON.stringify(snippet));
+
+      function cleanText(s) {
+        return (s || '').replace(/[\n\s]+/g, '');
+      }
 
       function findScrollTarget() {
-        // user-message と通常のdivの両方を探す
-        var candidates = document.querySelectorAll('div');
-        for (var i = 0; i < candidates.length; i++) {
-          var el = candidates[i];
-          // 直接のテキストノードを持つ要素（深すぎない）
-          var text = (el.innerText || '').replace(/\n/g, '').replace(/\s+/g, '');
-          if (text.length > 3000) continue;
-          if (text.indexOf(snippet) >= 0 && text.indexOf(snippet) < 80) {
-            return el;
-          }
-        }
-        // フォールバック: textContent に含む最小の要素
         var allEls = document.querySelectorAll('[data-testid="user-message"], [data-testid="assistant-message"]');
         for (var i = 0; i < allEls.length; i++) {
-          if ((allEls[i].textContent || '').replace(/\n/g, '').replace(/\s+/g, '').indexOf(snippet) >= 0 && (allEls[i].textContent || '').replace(/\n/g, '').replace(/\s+/g, '').indexOf(snippet) < 80) {
-            return allEls[i];
-          }
+          var cleaned = cleanText(allEls[i].textContent);
+          var idx = cleaned.indexOf(snippet);
+          if (idx >= 0 && idx < 80) return allEls[i];
         }
         return null;
       }
@@ -1123,14 +1100,11 @@ function injectedNavigate(targetUuids, scrollText) {
             var targetRect = target.getBoundingClientRect();
             var containerRect = container.getBoundingClientRect();
             container.scrollTop += targetRect.top - containerRect.top - 80;
-            console.log('[BranchScope] Scrolled via container');
           } else {
             target.scrollIntoView({ behavior: 'instant', block: 'center' });
-            console.log('[BranchScope] Scrolled via scrollIntoView');
           }
           return true;
         }
-        console.log('[BranchScope] Scroll target not found');
         return false;
       }
 
